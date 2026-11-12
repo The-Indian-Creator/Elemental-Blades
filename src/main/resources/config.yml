@@ -1,0 +1,290 @@
+# ============================================================
+#  ElementalBlades — main config
+#  Times are in SECONDS unless the key ends in -ticks (20 ticks = 1 s).
+#  Damage is in HALF-HEARTS (2 = 1 heart). 5 hearts = 10.
+#  Wherever the design was ambiguous there is a yes/no toggle here
+#  so you can pick the version you want without recompiling.
+# ============================================================
+
+controls:
+  # Right-click with a blade = Ability 1, Sneak + Right-click = Ability 2
+  right-click: true
+  # Offhand-swap key (F) = Ability 1, Sneak + F = Ability 2 (swap is cancelled while holding a blade)
+  swap-hand-key: true
+  # Show "A1 ready | A2 12s" on the action bar while holding a blade
+  action-bar: true
+
+# Worlds where abilities AND passives are disabled
+disabled-worlds: []
+
+# Count hits / kills on mobs (not only players) for hit-counter passives
+count-mob-hits: true
+count-mob-kills: false
+
+upgrades:
+  max-level: 3
+  # Per level: cooldown multiplier and ability-damage multiplier
+  levels:
+    1: { cooldown-multiplier: 1.0,  damage-multiplier: 1.0 }
+    2: { cooldown-multiplier: 0.85, damage-multiplier: 1.15 }
+    3: { cooldown-multiplier: 0.70, damage-multiplier: 1.30 }
+  # Item cost to reach each level (Material: amount)
+  cost:
+    2: { NETHERITE_INGOT: 2, DIAMOND_BLOCK: 2 }
+    3: { NETHERITE_INGOT: 4, NETHER_STAR: 1 }
+
+# ------------------------------------------------------------
+#  Blades. "spare-teammates: true" means that blade's abilities never
+#  hurt / freeze / trap team-mates. If false, the team's own
+#  "ability friendly fire" setting decides.
+# ------------------------------------------------------------
+blades:
+  flame:
+    spare-teammates: true
+    ability1:            # Ring of fire
+      cooldown: 30
+      duration: 5
+      radius: 3.5
+      damage: 10.0       # 5 hearts, reduced by armour
+      hit-interval-ticks: 20
+      set-on-fire-ticks: 40
+    ability2:            # Fireball stream
+      cooldown: 35
+      duration: 5
+      shot-interval-ticks: 4
+      fireball-speed: 1.6
+      ignite-blocks: false
+    passive:
+      # Default choice for new blades: FIRE_RESISTANCE or FIRE_ASPECT (players switch in the GUI)
+      default-choice: FIRE_RESISTANCE
+      fire-aspect-level: 2
+      # Chance to be immune to the Frost Blade dash freeze while holding Flame
+      frost-dash-immunity-chance: 0.5
+
+  frost:
+    spare-teammates: true
+    # Frozen players also can't attack (false = frozen players can still swing)
+    freeze-blocks-attacks: true
+    ability1:            # Freezing dash
+      cooldown: 20
+      dash-power: 1.9
+      dash-ticks: 10
+      hit-radius: 1.6
+      freeze-seconds: 1.0
+    ability2:            # Frost nova
+      cooldown: 40
+      radius: 5.0
+      freeze-seconds: 2.5
+      damage: 6.0
+    passive:
+      dolphins-grace: true
+      frost-walker-radius: 3
+      # Every 10th hit: chance to freeze for 0.5 s
+      tenth-hit-chance: 0.25
+      tenth-hit-freeze-seconds: 0.5
+      # Every 20th hit: chance to freeze for 3 s (0.5% = 0.005)
+      twentieth-hit-chance: 0.005
+      twentieth-hit-freeze-seconds: 3.0
+
+  life:
+    spare-teammates: true
+    ability1:            # Draining dash
+      cooldown: 20
+      dash-power: 1.9
+      dash-ticks: 10
+      hit-radius: 1.6
+      drain: 2.0         # 1 heart, ignores armour
+      absorption-chance: 0.5
+      absorption-amount: 2.0   # 1 absorption heart
+      max-bonus-absorption: 10.0
+    ability2:            # Vitality surge
+      cooldown: 60
+      duration: 5
+      max-health: 30.0   # 15 hearts
+      heal-to-full: true
+    passive:
+      # Effects the holder is immune to
+      immune-effects: [WITHER, POISON, INSTANT_DAMAGE]
+      # Also cancel "magic" damage (harming arrows / potions)
+      block-harming-damage: true
+      hits-per-potion: 10
+      healing-chance: 0.5     # otherwise a poison potion
+      splash: true
+
+  silence:
+    spare-teammates: true
+    ability1:            # Protective sphere
+      cooldown: 45
+      duration: 5
+      # true = blocks ALL damage, false = blocks only player/mob/projectile attacks
+      block-all-damage: false
+      knockback-attackers: true
+    ability2:            # Unbreakable dome
+      cooldown: 120
+      radius: 15
+      material: BLACK_STAINED_GLASS
+      # 0 = lasts until the user disables it, dies or drops the sword
+      max-duration: 0
+      # Can the dome owner walk through the wall?
+      owner-can-pass: true
+      # Only replace air/water/plants so terrain isn't destroyed (restored afterwards anyway)
+      only-replace-passable: true
+    passive:
+      pearl-uses: 5
+
+  lightning:
+    spare-teammates: true
+    ability1:            # Shockwave ring
+      cooldown: 50
+      radius: 6.0
+      disable-seconds: 5
+      clear-potion-effects: true
+      block-new-potion-effects: true
+      disable-abilities: true
+      disable-weapons: true
+      # Also stop abilities the victim already has running (fire ring, invisibility, dome...)
+      cancel-active-abilities: true
+    ability2:            # Storm strikes
+      cooldown: 60
+      # TIMED = active for duration seconds after use, ALWAYS = permanently on (ability button does nothing)
+      mode: TIMED
+      duration: 10
+      chance: 0.9
+      # Damage ignoring all armour, as a fraction of the victim's CURRENT health. Never kills.
+      health-fraction: 0.35
+      min-health-left: 1.0
+      internal-cooldown-ticks: 10
+    passive:
+      # Strength level (1 = Strength I, 2 = Strength II, 0 = none)
+      rain-strength: 1
+      thunder-strength: 2
+
+  velocity:
+    spare-teammates: true
+    ability1:            # Lightning speed + invisibility
+      cooldown: 60
+      duration: 20
+      speed-multiplier: 2.0
+      # Players get a brief glimpse of you every N ticks (0 = never)
+      glimpse-every-ticks: 40
+      glimpse-length-ticks: 3
+      teammates-can-see: true
+      reveal-on-attack: false
+    ability2:            # Shockwave slam
+      cooldown: 30
+      radius: 7.0
+      damage: 6.0
+      knockback: 1.6
+      slowness-seconds: 3
+    passive:
+      speed-level: 1
+
+  water:
+    spare-teammates: true
+    ability1:            # Water bubble prison
+      cooldown: 40
+      range: 20
+      duration: 4
+      drown-damage: 2.0
+      drown-interval-ticks: 15
+      respect-water-breathing: true
+    ability2:            # Tidal wave
+      cooldown: 35
+      length: 14
+      width: 3.0
+      damage: 6.0
+      push: 1.8
+      slowness-seconds: 3
+      extinguish-allies: true
+    passive:
+      water-breathing: true
+      conduit-power: true
+      # Riptide surge: hold sneak ~1 s, release to launch like Riptide III
+      riptide: true
+      # true = works anywhere, false = only in water or rain (normal riptide rules)
+      riptide-anywhere: false
+      riptide-cooldown: 3
+      riptide-power: 2.6
+
+# ------------------------------------------------------------
+#  Teams
+# ------------------------------------------------------------
+teams:
+  enabled: true
+  command: team
+  aliases: [t, clan]
+  max-members: 8
+  name-min-length: 3
+  name-max-length: 16
+  invite-expire-seconds: 60
+  # Default settings for new teams (owners change these in the GUI)
+  default-friendly-fire: false
+  default-ability-friendly-fire: false
+  home:
+    warmup-seconds: 3
+    cooldown-seconds: 30
+    cancel-on-move: true
+  chat:
+    # Messages starting with this go to team chat (empty = off)
+    prefix: "!"
+    format: "<dark_gray>[<team_color><team></team_color>]</dark_gray> <gray><player></gray><dark_gray>:</dark_gray> <white><message>"
+  # Show [TEAM] prefix above heads / in tab via the main scoreboard
+  nametag-prefix: true
+
+# ------------------------------------------------------------
+#  Resource pack (custom sword textures)
+# ------------------------------------------------------------
+resource-pack:
+  # SELF_HOST = this plugin serves the pack over HTTP (needs an open port)
+  # URL       = you upload the zip somewhere and paste a direct-download link below
+  # NONE      = don't send a pack (players install the zip manually)
+  mode: SELF_HOST
+  # Sword look:  FLAT = chunky 2D sprite,  MODEL_3D = ornate 3D model with glowing gems,
+  #              HYBRID = 3D in your hand, 2D icon in inventories / item frames / on the ground
+  style: HYBRID
+  # --- 2D sword look ---
+  # AUTO    = recolour YOUR vanilla netherite sword if netherite_sword.png is in this plugin folder, else built-in art
+  # VANILLA = always try the vanilla texture,  BUILTIN = always use the built-in art
+  flat-source: AUTO
+  # Path to netherite_sword.png OR your Minecraft client jar (e.g. C:/Users/you/AppData/Roaming/.minecraft/versions/26.3/26.3.jar)
+  netherite-texture: netherite_sword.png
+  # Element decorations (fire swooshes, trident prongs, ice crystals...) and a coloured glow outline
+  flat-decorations: true
+  flat-glow-outline: true
+  # Keep the vanilla brown handle instead of tinting it
+  keep-vanilla-handle: false
+  url: ""
+  self-host:
+    port: 8163
+    # Address players use to reach the port, e.g. "play.myserver.net" or a playit.gg tunnel address.
+    # Leave empty to use server-ip from server.properties.
+    public-address: ""
+  required: false
+  prompt: "<gold>ElementalBlades needs a small resource pack for the sword textures."
+
+# ------------------------------------------------------------
+#  Crafting recipes (shaped, 3x3). Every recipe needs a NETHERITE_SWORD.
+#  An existing blade can't be used as the sword.
+# ------------------------------------------------------------
+recipes:
+  flame:
+    shape: ["BMB", "FSF", "BNB"]
+    ingredients: { B: BLAZE_ROD, M: MAGMA_BLOCK, F: FIRE_CHARGE, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+  frost:
+    shape: ["IPI", "BSB", "INI"]
+    ingredients: { I: BLUE_ICE, P: POWDER_SNOW_BUCKET, B: SNOW_BLOCK, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+  life:
+    shape: ["GTG", "ASA", "GNG"]
+    ingredients: { G: GLISTERING_MELON_SLICE, T: TOTEM_OF_UNDYING, A: GOLDEN_APPLE, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+  silence:
+    shape: ["EKE", "CSC", "ENE"]
+    ingredients: { E: ECHO_SHARD, K: SCULK_CATALYST, C: SCULK_SENSOR, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+  lightning:
+    shape: ["RGR", "CSC", "RNR"]
+    ingredients: { R: LIGHTNING_ROD, G: GLOWSTONE, C: COPPER_BLOCK, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+  velocity:
+    shape: ["FWF", "RSR", "FNF"]
+    ingredients: { F: FEATHER, W: WIND_CHARGE, R: RABBIT_FOOT, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+  water:
+    shape: ["PHP", "OSO", "PNP"]
+    ingredients: { P: PRISMARINE_SHARD, H: HEART_OF_THE_SEA, O: NAUTILUS_SHELL, S: NETHERITE_SWORD, N: NETHERITE_INGOT }

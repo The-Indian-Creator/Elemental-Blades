@@ -1,0 +1,29 @@
+name: ElementalBlades
+version: '${version}'
+main: com.elementalblades.ElementalBlades
+api-version: '26.1'
+description: Seven craftable elemental swords with abilities, upgrade GUI and an integrated PvP team system.
+author: Ketan
+load: POSTWORLD
+
+# Commands (/blades, /team, /tc) are registered with Paper's Brigadier API in code.
+
+permissions:
+  elementalblades.use:
+    description: Use blade abilities
+    default: true
+  elementalblades.craft:
+    description: Craft blades
+    default: true
+  elementalblades.upgrade:
+    description: Upgrade blades in the GUI
+    default: true
+  elementalblades.team:
+    description: Use the team system
+    default: true
+  elementalblades.nocooldown:
+    description: Abilities have no cooldown (testing)
+    default: false
+  elementalblades.admin:
+    description: Give blades, reload, bypass
+    default: op
