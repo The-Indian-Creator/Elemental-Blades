@@ -4,7 +4,7 @@ Seven craftable elemental swords with two abilities and a passive each, custom t
 an upgrade/configuration GUI, and a built-in PvP team system (team chest, team home, team chat,
 friendly-fire controls) that the abilities respect.
 
-> You asked for 6 swords but described 7 (Flame, Frost, Life, Silence, Lightning, Velocity, Water),
+> 7 (Flame, Frost, Life, Silence, Lightning, Velocity, Water),
 > so all 7 are in. Disable any of them by setting `recipes.<blade>.enabled: false`.
 
 ---
