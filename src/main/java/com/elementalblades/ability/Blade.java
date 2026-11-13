@@ -5,6 +5,12 @@ import com.elementalblades.blade.BladeType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.scheduler.BukkitTask;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 /** Behaviour of one blade type. Abilities return true when they actually fired (starts the cooldown). */
 public abstract class Blade {
@@ -22,6 +28,26 @@ public abstract class Blade {
     public abstract boolean ability1(AbilityContext ctx);
 
     public abstract boolean ability2(AbilityContext ctx);
+
+    /** Ultimate (F key). Return true when it fired (consumes the charge / starts the cooldown). */
+    public boolean ultimate(AbilityContext ctx) { return false; }
+
+    /** Running ultimate tasks (one per player), stopped on death/quit/shock/disable. */
+    protected final Map<UUID, BukkitTask> ultTasks = new HashMap<>();
+
+    protected void trackUlt(Player p, BukkitTask task) {
+        stopUltimate(p.getUniqueId());
+        ultTasks.put(p.getUniqueId(), task);
+    }
+
+    public void stopUltimate(UUID id) {
+        BukkitTask t = ultTasks.remove(id);
+        if (t != null) t.cancel();
+    }
+
+    public void stopAllUltimates() {
+        for (UUID id : new ArrayList<>(ultTasks.keySet())) stopUltimate(id);
+    }
 
     /** Called every 10 ticks while the blade is in the main hand (and the player isn't shocked). */
     public void passiveTick(AbilityContext ctx) {}

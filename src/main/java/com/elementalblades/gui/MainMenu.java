@@ -52,7 +52,11 @@ public final class MainMenu extends Menu {
         set(22, Icons.item(Material.BOOK, "<white>Controls",
                 "<gray>Right-click: <white>Ability 1",
                 "<gray>Sneak + Right-click: <white>Ability 2",
-                plugin.getConfig().getBoolean("controls.swap-hand-key", true) ? "<gray>F (swap hands) / Sneak + F also work" : "",
+                !plugin.getConfig().getBoolean("controls.swap-hand-key", true) ? ""
+                        : !plugin.abilities().ultimatesEnabled() || "NONE".equalsIgnoreCase(plugin.getConfig().getString("controls.ultimate-key", "SWAP_HAND"))
+                        ? "<gray>F (swap hands) / Sneak + F also work"
+                        : "SNEAK_SWAP".equalsIgnoreCase(plugin.getConfig().getString("controls.ultimate-key", "SWAP_HAND"))
+                        ? "<gray>F: <white>Ability 1  <gray>Sneak + F: <gold>Ultimate" : "<gray>F (swap hands): <gold>Ultimate",
                 "<gray>Passives work while the blade is in your main hand."));
 
         if (viewer.hasPermission("elementalblades.admin")) {

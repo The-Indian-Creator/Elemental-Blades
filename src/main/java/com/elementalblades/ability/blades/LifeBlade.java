@@ -33,6 +33,8 @@ public final class LifeBlade extends Blade {
     private static final Color GREEN = Color.fromRGB(76, 255, 106);
     private final Map<UUID, BukkitTask> surges = new HashMap<>();
     private final Set<UUID> bonusAbsorption = new HashSet<>();
+    /** Sanctuary cheat-death window (epoch millis). */
+    private final Map<UUID, Long> undyingUntil = new HashMap<>();
 
     public LifeBlade(ElementalBlades plugin) {
         super(plugin, BladeType.LIFE);
@@ -115,10 +117,6 @@ public final class LifeBlade extends Blade {
         if (inst != null && !p.isDead() && p.getHealth() > inst.getValue()) p.setHealth(inst.getValue());
     }
 
-    @Override
-    public String statusText(Player player) {
-        return surges.containsKey(player.getUniqueId()) ? "❤ Surge active" : null;
-    }
 
     // ------------------------------------------------------------ passive
 
@@ -153,8 +151,82 @@ public final class LifeBlade extends Blade {
         Text.send(p, healing ? "<green>Your Life Blade granted a Healing potion." : "<dark_green>Your Life Blade granted a Poison potion.");
     }
 
+    // ============================================================ Ultimate — Sanctuary
+
+    private static final List<String> NEGATIVE = List.of("POISON", "WITHER", "SLOWNESS", "WEAKNESS", "BLINDNESS",
+            "DARKNESS", "NAUSEA", "MINING_FATIGUE", "HUNGER", "LEVITATION", "INSTANT_DAMAGE", "BAD_OMEN", "UNLUCK");
+
+    @Override
+    public boolean ultimate(AbilityContext ctx) {
+        Player p = ctx.player();
+        double radius = ctx.d("ultimate.radius", 10);
+        int regenTicks = (int) ctx.ticks("ultimate.regeneration-seconds", 8);
+        int regenLevel = ctx.i("ultimate.regeneration-level", 2);
+        List<Player> healed = new ArrayList<>();
+        healed.add(p);
+        if (ctx.b("ultimate.heal-teammates", true)) {
+            for (Player other : p.getWorld().getPlayers()) {
+                if (!other.equals(p) && other.getLocation().distanceSquared(p.getLocation()) <= radius * radius
+                        && plugin.combat().sameTeam(p.getUniqueId(), other.getUniqueId())) healed.add(other);
+            }
+        }
+        for (Player h : healed) {
+            AttributeInstance max = h.getAttribute(Attribute.MAX_HEALTH);
+            if (max != null) h.setHealth(max.getValue());
+            h.setFireTicks(0);
+            if (ctx.b("ultimate.cleanse", true)) {
+                for (var pe : new ArrayList<>(h.getActivePotionEffects())) {
+                    if (NEGATIVE.contains(pe.getType().getKey().getKey().toUpperCase(Locale.ROOT))) h.removePotionEffect(pe.getType());
+                }
+            }
+            if (regenLevel > 0) h.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.REGENERATION, regenTicks, regenLevel - 1));
+            h.getWorld().spawnParticle(Particle.HEART, h.getLocation().add(0, 2, 0), 8, 0.5, 0.3, 0.5, 0);
+            if (!h.equals(p)) Text.send(h, "<green>❤ " + Text.esc(p.getName()) + "'s Sanctuary healed you!");
+        }
+        long undying = (long) (ctx.d("ultimate.cheat-death-seconds", 10) * 1000);
+        if (undying > 0) undyingUntil.put(p.getUniqueId(), System.currentTimeMillis() + undying);
+        p.getWorld().playSound(p.getLocation(), Sound.BLOCK_BEACON_ACTIVATE, 1.5f, 1.4f);
+        p.getWorld().playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 0.8f);
+        org.bukkit.Location c = p.getLocation();
+        Fx.repeat(plugin, 1, 20, t -> {
+            double r = radius * (t + 1) / 20.0;
+            Fx.dustRing(c.clone().add(0, 0.2, 0), r, GREEN, 1.5f, (int) (r * 8));
+            Fx.ring(c.clone().add(0, 0.4 + t * 0.15, 0), 1.2, Particle.HAPPY_VILLAGER, 8, null);
+        }, null);
+        if (undying > 0) trackUlt(p, Fx.repeat(plugin, 5, undying / 50, t -> {
+            if (p.isOnline() && undyingUntil.containsKey(p.getUniqueId()))
+                Fx.dustRing(p.getLocation().add(0, 2.3, 0), 0.4, Color.fromRGB(255, 215, 80), 0.9f, 8); // halo
+        }, null));
+        return true;
+    }
+
+    /** Called when the player would die. @return true if Sanctuary saved them. */
+    public boolean cheatDeath(Player p) {
+        Long until = undyingUntil.remove(p.getUniqueId());
+        if (until == null || until < System.currentTimeMillis()) return false;
+        stopUltimate(p.getUniqueId());
+        AttributeInstance max = p.getAttribute(Attribute.MAX_HEALTH);
+        double hp = plugin.getConfig().getDouble("blades.life.ultimate.cheat-death-health", 10);
+        p.setHealth(Math.max(1, Math.min(max != null ? max.getValue() : 20, hp)));
+        p.setFireTicks(0);
+        p.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, p.getLocation().add(0, 1, 0), 80, 0.5, 1, 0.5, 0.4);
+        p.getWorld().playSound(p.getLocation(), Sound.ITEM_TOTEM_USE, 1f, 1f);
+        Text.send(p, "<green><bold>Sanctuary saved you from death!");
+        return true;
+    }
+
+    @Override
+    public String statusText(Player player) {
+        Long until = undyingUntil.get(player.getUniqueId());
+        String surge = surges.containsKey(player.getUniqueId()) ? "❤ Surge active" : null;
+        if (until == null || until < System.currentTimeMillis()) return surge;
+        String sanct = "✚ Undying " + Text.seconds(until - System.currentTimeMillis());
+        return surge == null ? sanct : surge + "  " + sanct;
+    }
+
     @Override
     public void cleanup(Player player) {
+        undyingUntil.remove(player.getUniqueId());
         endSurge(player);
         StatusManager.removeModifier(player, Attribute.MAX_ABSORPTION, Keys.MOD_LIFE_ABSORB);
         bonusAbsorption.remove(player.getUniqueId());

@@ -98,6 +98,49 @@ public final class FrostBlade extends Blade {
         return p.getPersistentDataContainer().getOrDefault(Keys.FROST_WALKER, PersistentDataType.BOOLEAN, true);
     }
 
+    // ============================================================ Ultimate — Blizzard
+
+    @Override
+    public boolean ultimate(AbilityContext ctx) {
+        Player p = ctx.player();
+        double radius = ctx.d("ultimate.radius", 8);
+        long duration = ctx.ticks("ultimate.duration", 6);
+        double damage = ctx.dmg("ultimate.damage-per-second", 3.0);
+        int slowLevel = ctx.i("ultimate.slowness-level", 3);
+        double endFreeze = ctx.d("ultimate.final-freeze-seconds", 2.0);
+        p.getWorld().playSound(p.getLocation(), Sound.ENTITY_PLAYER_HURT_FREEZE, 1.5f, 0.5f);
+        p.getWorld().playSound(p.getLocation(), Sound.WEATHER_RAIN_ABOVE, 1.5f, 0.5f);
+        java.util.Set<LivingEntity> caught = new java.util.HashSet<>();
+        trackUlt(p, Fx.repeat(plugin, 2, duration, t -> {
+            if (!p.isOnline() || p.isDead()) { stopUltimate(p.getUniqueId()); return; }
+            Location c = p.getLocation();
+            ThreadLocalRandom r = ThreadLocalRandom.current();
+            for (int i = 0; i < 40; i++) {
+                double a = r.nextDouble(Math.PI * 2), d = Math.sqrt(r.nextDouble()) * radius;
+                Location pt = c.clone().add(Math.cos(a) * d, r.nextDouble(0, 4), Math.sin(a) * d);
+                p.getWorld().spawnParticle(i % 4 == 0 ? Particle.CLOUD : Particle.SNOWFLAKE, pt, 1, 0.3, 0, 0.3, 0.05);
+            }
+            Fx.dustRing(c.clone().add(0, 0.2, 0), radius, ICE, 1.4f, (int) (radius * 6));
+            for (LivingEntity e : plugin.combat().targetsNear(p, c, radius, type)) {
+                caught.add(e);
+                e.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.SLOWNESS, 30, Math.max(0, slowLevel - 1)));
+                e.setFreezeTicks(Math.min(e.getMaxFreezeTicks(), e.getFreezeTicks() + 10));
+                if (t % 20 == 0) plugin.combat().damage(p, e, damage, DamageType.FREEZE);
+            }
+        }, () -> {
+            if (!p.isOnline() || endFreeze <= 0) return;
+            for (LivingEntity e : caught) {
+                if (!e.isValid() || e.isDead() || !e.getWorld().equals(p.getWorld())
+                        || e.getLocation().distanceSquared(p.getLocation()) > radius * radius * 1.5) continue;
+                if (!plugin.combat().canAffect(p, e, type)) continue;
+                plugin.status().freeze(e, endFreeze, FreezeSource.OTHER);
+                e.getWorld().spawnParticle(Particle.BLOCK, e.getLocation().add(0, 1, 0), 30, 0.3, 0.6, 0.3, 0, Material.ICE.createBlockData());
+            }
+            p.getWorld().playSound(p.getLocation(), Sound.BLOCK_GLASS_BREAK, 1.5f, 0.6f);
+        }));
+        return true;
+    }
+
     public static void setFrostWalker(Player p, boolean on) {
         p.getPersistentDataContainer().set(Keys.FROST_WALKER, PersistentDataType.BOOLEAN, on);
     }

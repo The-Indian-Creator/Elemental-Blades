@@ -64,6 +64,12 @@ public final class BladeItems {
             lore.add(Text.gray("  " + type.ability1Desc()));
             lore.add(Text.plain("» " + type.ability2Name(), type.textColor()).append(Text.mm(" <dark_gray>[Sneak + Right-click]")));
             lore.add(Text.gray("  " + type.ability2Desc()));
+            var cfg = ElementalBlades.get().getConfig();
+            if (cfg.getBoolean("ultimate.enabled", true)) {
+                String key = "SNEAK_SWAP".equalsIgnoreCase(cfg.getString("controls.ultimate-key", "SWAP_HAND")) ? "Sneak + F" : "F";
+                lore.add(Text.mm("<gold>✦ " + type.ultimateName() + " <dark_gray>[" + key + "] <gold>ULTIMATE"));
+                lore.add(Text.gray("  " + type.ultimateDesc()));
+            }
             lore.add(Component.empty());
             lore.add(Text.mm("<gold>Passive"));
             for (String line : type.passiveLines()) lore.add(Text.gray("  " + line));
@@ -133,6 +139,31 @@ public final class BladeItems {
             case 6 -> "VI"; case 7 -> "VII"; case 8 -> "VIII"; case 9 -> "IX"; case 10 -> "X";
             default -> String.valueOf(n);
         };
+    }
+
+    // ---------- Mythic Core ----------
+
+    /** The rare crafting component every blade needs. */
+    public static ItemStack mythicCore(int amount) {
+        ItemStack core = ItemStack.of(Material.NETHER_STAR, Math.max(1, amount));
+        core.editMeta(meta -> {
+            meta.getPersistentDataContainer().set(Keys.MYTHIC_CORE, PersistentDataType.BOOLEAN, true);
+            meta.itemName(Text.mm("<gradient:#B14CFF:#FFD54A><bold>Mythic Core</bold></gradient>"));
+            meta.lore(List.of(
+                    Text.mm("<gray>A shard of raw elemental power."),
+                    Text.mm("<gray>The heart of every Elemental Blade."),
+                    Component.empty(),
+                    Text.mm("<dark_gray>Used in all blade recipes")));
+            meta.setItemModel(new NamespacedKey("elementalblades", "mythic_core"));
+            meta.setRarity(ItemRarity.EPIC);
+            meta.setEnchantmentGlintOverride(true);
+        });
+        return core;
+    }
+
+    public static boolean isMythicCore(ItemStack item) {
+        if (item == null || item.getType() != Material.NETHER_STAR) return false;
+        return Boolean.TRUE.equals(item.getPersistentDataContainer().get(Keys.MYTHIC_CORE, PersistentDataType.BOOLEAN));
     }
 
     // ---------- Silence pearls ----------

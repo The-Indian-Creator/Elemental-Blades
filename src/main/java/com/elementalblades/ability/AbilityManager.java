@@ -27,6 +27,10 @@ public final class AbilityManager {
     private final Map<UUID, BladeType> lastHeld = new HashMap<>();
     private final Map<UUID, Map<PotionEffectType, Integer>> passiveEffects = new HashMap<>();
     private final Map<UUID, EnumMap<BladeType, Integer>> hitCounters = new HashMap<>();
+    /** Ultimate charge, 0..1 (CHARGE mode). Shared across blades. */
+    private final Map<UUID, Double> ultCharge = new HashMap<>();
+    /** No charge is gained until this time (while/just after an ultimate runs). */
+    private final Map<UUID, Long> ultLockout = new HashMap<>();
 
     public AbilityManager(ElementalBlades plugin) {
         this.plugin = plugin;
@@ -74,6 +78,10 @@ public final class AbilityManager {
             p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1f, 0.6f);
             return;
         }
+        if (plugin.status().isFrameLocked(p)) {
+            p.sendActionBar(Component.text("▣ You're frame-locked!", NamedTextColor.WHITE));
+            return;
+        }
         Blade blade = blades.get(ctx.type());
         long remaining = cooldownRemaining(p, ctx.type(), slot);
         if (remaining > 0 && !blade.bypassCooldown(p, slot)) {
@@ -90,6 +98,118 @@ public final class AbilityManager {
             fired = false;
         }
         if (fired) setCooldown(p, ctx, slot);
+    }
+
+    // ------------------------------------------------------------ ultimates
+
+    private org.bukkit.configuration.file.FileConfiguration cfg() { return plugin.getConfig(); }
+
+    public boolean ultimatesEnabled() { return cfg().getBoolean("ultimate.enabled", true); }
+
+    private boolean cooldownMode() { return "COOLDOWN".equalsIgnoreCase(cfg().getString("ultimate.mode", "CHARGE")); }
+
+    public double ultCharge(Player p) { return ultCharge.getOrDefault(p.getUniqueId(), 0.0); }
+
+    public boolean ultReady(Player p, BladeType t) {
+        if (p.hasPermission("elementalblades.nocooldown")) return true;
+        return cooldownMode() ? cooldownRemaining(p, t, 3) <= 0 : ultCharge(p) >= 1.0;
+    }
+
+    /** Adds charge for damage the player dealt while holding a blade. */
+    public void addUltCharge(Player p, double damage, boolean victimIsPlayer) {
+        if (!ultimatesEnabled() || cooldownMode() || damage <= 0) return;
+        Long lock = ultLockout.get(p.getUniqueId());
+        if (lock != null && lock > System.currentTimeMillis()) return;
+        double required = Math.max(1, cfg().getDouble("ultimate.charge-required", 40));
+        double mult = victimIsPlayer ? 1.0 : cfg().getDouble("ultimate.mob-damage-multiplier", 0.5);
+        addRawCharge(p, damage * mult / required);
+    }
+
+    /** Kill bonus (fraction of a full bar). */
+    public void addKillCharge(Player p, boolean victimIsPlayer) {
+        if (!ultimatesEnabled() || cooldownMode()) return;
+        double bonus = cfg().getDouble(victimIsPlayer ? "ultimate.kill-bonus" : "ultimate.mob-kill-bonus", victimIsPlayer ? 0.30 : 0.0);
+        if (bonus > 0) addRawCharge(p, bonus);
+    }
+
+    private void addRawCharge(Player p, double amount) {
+        double before = ultCharge(p);
+        double after = Math.min(1.0, before + amount);
+        ultCharge.put(p.getUniqueId(), after);
+        if (before < 1.0 && after >= 1.0) {
+            p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.6f, 1.6f);
+            p.playSound(p.getLocation(), Sound.BLOCK_BEACON_POWER_SELECT, 0.8f, 1.8f);
+            BladeType held = BladeItems.held(p);
+            Text.send(p, "<gold><bold>ULTIMATE READY!</bold> <gray>Press <white>[" + ultKeyName() + "]</white>"
+                    + (held != null ? " to use " + held.ultimateName() : "") + ".");
+        }
+    }
+
+    public void resetUltCharge(Player p) { ultCharge.remove(p.getUniqueId()); }
+
+    /** Text for the ultimate key under the current control scheme. */
+    public String ultKeyName() {
+        return "SNEAK_SWAP".equalsIgnoreCase(cfg().getString("controls.ultimate-key", "SWAP_HAND")) ? "Sneak + F" : "F";
+    }
+
+    public void activateUltimate(Player p) {
+        AbilityContext ctx = context(p);
+        if (ctx == null || !p.hasPermission("elementalblades.use")) return;
+        if (!ultimatesEnabled()) { p.sendActionBar(Component.text("Ultimates are disabled on this server", NamedTextColor.RED)); return; }
+        if (worldDisabled(p)) { p.sendActionBar(Component.text("Blade abilities are disabled in this world", NamedTextColor.RED)); return; }
+        if (plugin.status().isShocked(p)) {
+            p.sendActionBar(Component.text("⚡ You are shocked! Abilities disabled", NamedTextColor.YELLOW));
+            p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1f, 0.6f);
+            return;
+        }
+        if (plugin.status().isFrameLocked(p)) {
+            p.sendActionBar(Component.text("▣ You're frame-locked!", NamedTextColor.WHITE));
+            return;
+        }
+        if (!ultReady(p, ctx.type())) {
+            String msg = cooldownMode()
+                    ? ctx.type().ultimateName() + " ready in " + Text.seconds(cooldownRemaining(p, ctx.type(), 3))
+                    : ctx.type().ultimateName() + " charging: " + (int) (ultCharge(p) * 100) + "% — deal damage to charge it";
+            p.sendActionBar(Component.text(msg, NamedTextColor.RED));
+            return;
+        }
+        boolean fired;
+        try {
+            fired = blades.get(ctx.type()).ultimate(ctx);
+        } catch (Exception ex) {
+            plugin.getLogger().severe("Ultimate error (" + ctx.type() + "): " + ex);
+            ex.printStackTrace();
+            fired = false;
+        }
+        if (!fired) return;
+        p.getWorld().playSound(p.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 0.7f, 1.4f);
+        p.showTitle(net.kyori.adventure.title.Title.title(
+                Component.text(ctx.type().ultimateName().toUpperCase(), ctx.type().textColor()),
+                Component.text("ULTIMATE", NamedTextColor.GOLD)));
+        if (cooldownMode()) {
+            if (!p.hasPermission("elementalblades.nocooldown")) {
+                long ms = (long) (cfg().getDouble("ultimate.cooldown", 120) * ctx.cooldownMultiplier() * 1000);
+                cooldowns.put(key(p.getUniqueId(), ctx.type(), 3), System.currentTimeMillis() + ms);
+            }
+        } else if (!p.hasPermission("elementalblades.nocooldown")) {
+            ultCharge.put(p.getUniqueId(), 0.0);
+        }
+        double lockSec = ctx.d("ultimate.duration", 6) + cfg().getDouble("ultimate.lockout-seconds", 3);
+        ultLockout.put(p.getUniqueId(), System.currentTimeMillis() + (long) (lockSec * 1000));
+    }
+
+    private Component ultStatus(Player p, AbilityContext ctx) {
+        if (cooldownMode()) {
+            long rem = cooldownRemaining(p, ctx.type(), 3);
+            return rem <= 0 ? Component.text("ULT ✔", NamedTextColor.GOLD)
+                    : Component.text("ULT " + Text.seconds(rem), NamedTextColor.DARK_RED);
+        }
+        double c = ultCharge(p);
+        if (c >= 1.0 || p.hasPermission("elementalblades.nocooldown")) {
+            boolean blink = (System.currentTimeMillis() / 500) % 2 == 0;
+            return Component.text("✦ ULT READY [" + ultKeyName() + "]", blink ? NamedTextColor.GOLD : NamedTextColor.YELLOW);
+        }
+        return Component.text("ULT " + (int) (c * 100) + "%", NamedTextColor.DARK_AQUA);
     }
 
     // ------------------------------------------------------------ cooldowns
@@ -185,7 +305,7 @@ public final class AbilityManager {
         removePassiveEffects(p);
         // Stop abilities that are already running (fire ring, invisibility, dome...)
         if (plugin.getConfig().getBoolean("blades.lightning.ability1.cancel-active-abilities", true)) {
-            for (Blade b : blades.values()) b.cleanup(p);
+            for (Blade b : blades.values()) { b.cleanup(p); b.stopUltimate(p.getUniqueId()); }
         }
     }
 
@@ -198,6 +318,7 @@ public final class AbilityManager {
         Component bar = Component.text(ctx.type().displayName() + "  ", ctx.type().textColor())
                 .append(slotStatus(p, ctx, 1)).append(Component.text("  |  ", NamedTextColor.DARK_GRAY))
                 .append(slotStatus(p, ctx, 2));
+        if (ultimatesEnabled()) bar = bar.append(Component.text("  |  ", NamedTextColor.DARK_GRAY)).append(ultStatus(p, ctx));
         String extra = blades.get(ctx.type()).statusText(p);
         if (extra != null) bar = bar.append(Component.text("  " + extra, NamedTextColor.GOLD));
         p.sendActionBar(bar);
@@ -216,16 +337,18 @@ public final class AbilityManager {
         BladeType before = lastHeld.remove(p.getUniqueId());
         if (before != null) blades.get(before).onUnhold(p);
         removePassiveEffects(p);
-        for (Blade b : blades.values()) b.cleanup(p);
+        for (Blade b : blades.values()) { b.cleanup(p); b.stopUltimate(p.getUniqueId()); }
     }
 
     public void forget(UUID id) {
         hitCounters.remove(id);
+        ultLockout.remove(id);
+        if (!cfg().getBoolean("ultimate.keep-charge-on-quit", true)) ultCharge.remove(id);
         passiveEffects.remove(id);
     }
 
     public void shutdown() {
         for (Player p : Bukkit.getOnlinePlayers()) cleanup(p);
-        for (Blade b : blades.values()) b.shutdown();
+        for (Blade b : blades.values()) { b.shutdown(); b.stopAllUltimates(); }
     }
 }
