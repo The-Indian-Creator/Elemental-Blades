@@ -142,6 +142,10 @@ public final class Commands {
                 .then(lit("pearl").requires(s -> s.getSender().hasPermission("elementalblades.admin"))
                         .executes(player(ctx -> me(ctx).getInventory().addItem(
                                 BladeItems.silencePearl(plugin.getConfig().getInt("blades.silence.passive.pearl-uses", 5))))))
+                .then(lit("core").requires(s -> s.getSender().hasPermission("elementalblades.admin"))
+                        .executes(player(ctx -> me(ctx).getInventory().addItem(BladeItems.mythicCore(1))))
+                        .then(arg("amount", IntegerArgumentType.integer(1, 64)).executes(player(ctx ->
+                                me(ctx).getInventory().addItem(BladeItems.mythicCore(IntegerArgumentType.getInteger(ctx, "amount")))))))
                 .then(lit("reload").requires(s -> s.getSender().hasPermission("elementalblades.admin"))
                         .executes(ctx -> {
                             plugin.reload();

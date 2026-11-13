@@ -21,6 +21,10 @@ public final class Keys {
     public static NamespacedKey MOD_BUBBLE_SPEED;
     public static NamespacedKey MOD_BUBBLE_JUMP;
     public static NamespacedKey GUI_ACTION;
+    public static NamespacedKey MYTHIC_CORE;
+    public static NamespacedKey MOD_FRAME_SPEED;
+    public static NamespacedKey MOD_FRAME_JUMP;
+    public static NamespacedKey AFTERIMAGE;
 
     private Keys() {}
 
@@ -41,5 +45,9 @@ public final class Keys {
         MOD_BUBBLE_SPEED = new NamespacedKey(plugin, "bubble_speed");
         MOD_BUBBLE_JUMP = new NamespacedKey(plugin, "bubble_jump");
         GUI_ACTION = new NamespacedKey(plugin, "gui_action");
+        MYTHIC_CORE = new NamespacedKey(plugin, "mythic_core");
+        MOD_FRAME_SPEED = new NamespacedKey(plugin, "frame_speed");
+        MOD_FRAME_JUMP = new NamespacedKey(plugin, "frame_jump");
+        AFTERIMAGE = new NamespacedKey(plugin, "afterimage");
     }
 }

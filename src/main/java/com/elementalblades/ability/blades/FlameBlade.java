@@ -19,9 +19,8 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 public final class FlameBlade extends Blade {
 
@@ -106,6 +105,62 @@ public final class FlameBlade extends Blade {
     private static void stop(Map<UUID, BukkitTask> map, UUID id) {
         BukkitTask t = map.remove(id);
         if (t != null) t.cancel();
+    }
+
+    // ============================================================ Ultimate — Meteor Storm
+
+    @Override
+    public boolean ultimate(AbilityContext ctx) {
+        Player p = ctx.player();
+        double radius = ctx.d("ultimate.radius", 12);
+        long duration = ctx.ticks("ultimate.duration", 6);
+        long interval = Math.max(4, ctx.i("ultimate.interval-ticks", 12));
+        int perWave = ctx.i("ultimate.meteors-per-wave", 3);
+        double impact = ctx.d("ultimate.impact-radius", 3.5);
+        double damage = ctx.dmg("ultimate.damage", 7.0);
+        int fire = (int) ctx.ticks("ultimate.fire-seconds", 4);
+        p.getWorld().playSound(p.getLocation(), Sound.ENTITY_BLAZE_SHOOT, 1.5f, 0.5f);
+        p.getWorld().playSound(p.getLocation(), Sound.ITEM_FIRECHARGE_USE, 1.5f, 0.6f);
+        trackUlt(p, Fx.repeat(plugin, interval, duration, t -> {
+            if (!p.isOnline() || p.isDead()) { stopUltimate(p.getUniqueId()); return; }
+            List<LivingEntity> enemies = plugin.combat().targetsNear(p, p.getLocation(), radius, type);
+            Collections.shuffle(enemies);
+            ThreadLocalRandom r = ThreadLocalRandom.current();
+            for (int i = 0; i < perWave; i++) {
+                Location target;
+                if (i < enemies.size()) target = enemies.get(i).getLocation().add(r.nextDouble(-1, 1), 0, r.nextDouble(-1, 1));
+                else target = p.getLocation().add(r.nextDouble(-radius, radius), 0, r.nextDouble(-radius, radius));
+                target = p.getWorld().getHighestBlockAt(target).getLocation().add(0.5, 1, 0.5);
+                if (Math.abs(target.getY() - p.getLocation().getY()) > 12) target.setY(p.getLocation().getY());
+                meteor(p, target, impact, damage, fire);
+            }
+        }, null));
+        return true;
+    }
+
+    /** A falling meteor (particles only — no block damage), exploding on impact. */
+    private void meteor(Player p, Location target, double impact, double damage, int fire) {
+        final int fall = 10;
+        Location sky = target.clone().add(-4, 14, -4);
+        Vector step = target.toVector().subtract(sky.toVector()).multiply(1.0 / fall);
+        Fx.repeat(plugin, 1, fall, t -> {
+            Location at = sky.clone().add(step.clone().multiply(t));
+            at.getWorld().spawnParticle(Particle.FLAME, at, 12, 0.35, 0.35, 0.35, 0.02);
+            at.getWorld().spawnParticle(Particle.LARGE_SMOKE, at, 4, 0.3, 0.3, 0.3, 0.01);
+            at.getWorld().spawnParticle(Particle.LAVA, at, 1, 0.2, 0.2, 0.2, 0);
+            Fx.dustRing(target.clone().add(0, 0.1, 0), impact * 0.6, Color.fromRGB(255, 90, 31), 1.0f, 12);
+        }, () -> {
+            if (!p.isOnline()) return;
+            target.getWorld().spawnParticle(Particle.EXPLOSION, target, 2, 0.5, 0.3, 0.5, 0);
+            target.getWorld().spawnParticle(Particle.FLAME, target, 60, impact * 0.4, 0.3, impact * 0.4, 0.12);
+            target.getWorld().playSound(target, Sound.ENTITY_GENERIC_EXPLODE, 1.2f, 0.8f);
+            for (LivingEntity e : plugin.combat().targetsNear(p, target.clone().add(0, 0.5, 0), impact, type)) {
+                plugin.combat().armouredDamage(p, e, damage);
+                if (fire > 0) e.setFireTicks(Math.max(e.getFireTicks(), fire));
+                Vector up = e.getLocation().toVector().subtract(target.toVector()).setY(0);
+                if (up.lengthSquared() > 1e-4) e.setVelocity(up.normalize().multiply(0.5).setY(0.45));
+            }
+        });
     }
 
     @Override

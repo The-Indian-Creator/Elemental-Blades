@@ -44,6 +44,10 @@ public final class AdminMenu extends Menu {
         }
         set(22, Icons.item(Material.ENDER_PEARL, "<light_purple>Silent Pearl", "<gray>Give a 5-use pearl"),
                 e -> viewer.getInventory().addItem(BladeItems.silencePearl(plugin.getConfig().getInt("blades.silence.passive.pearl-uses", 5))));
+        set(20, BladeItems.mythicCore(1), e -> {
+            viewer.getInventory().addItem(BladeItems.mythicCore(1));
+            success("Gave a Mythic Core.");
+        });
         set(24, Icons.item(Material.CLOCK, "<aqua>Reset my cooldowns"), e -> {
             plugin.abilities().resetCooldowns(viewer.getUniqueId());
             success("Cooldowns reset.");

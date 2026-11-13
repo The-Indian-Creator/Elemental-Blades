@@ -36,6 +36,7 @@ public final class BladeMenu extends Menu {
 
         set(19, abilityIcon(type, 1));
         set(25, abilityIcon(type, 2));
+        if (plugin.abilities().ultimatesEnabled()) set(13, ultimateIcon(type));
 
         // Upgrade
         if (level >= max) {
@@ -101,6 +102,23 @@ public final class BladeMenu extends Menu {
         lore.add(rem > 0 ? "<red>Ready in " + Text.seconds(rem) : "<green>Ready");
         return Icons.item(slot == 1 ? Material.FIRE_CHARGE : Material.DRAGON_BREATH,
                 "<#" + String.format("%06X", type.textColor().value()) + "><bold>" + name, lore);
+    }
+
+    private ItemStack ultimateIcon(BladeType type) {
+        List<String> lore = new ArrayList<>(wrap(type.ultimateDesc()));
+        lore.add("");
+        boolean cdMode = "COOLDOWN".equalsIgnoreCase(plugin.getConfig().getString("ultimate.mode", "CHARGE"));
+        if (cdMode) {
+            lore.add("<gray>Cooldown: <white>" + (int) plugin.getConfig().getDouble("ultimate.cooldown", 120) + "s");
+        } else {
+            lore.add("<gray>Charges as you deal damage");
+            lore.add("<gray>(kills give a big boost).");
+            lore.add("<gray>Charge: <white>" + (int) (plugin.abilities().ultCharge(viewer) * 100) + "%");
+        }
+        lore.add("<gray>Use: <white>" + plugin.abilities().ultKeyName());
+        boolean ready = plugin.abilities().ultReady(viewer, type);
+        lore.add(ready ? "<green>READY" : "<red>Not ready");
+        return Icons.glow(Icons.item(Material.NETHER_STAR, "<gold><bold>✦ " + type.ultimateName() + " <yellow>(Ultimate)", lore), ready);
     }
 
     private void chooseFlame(String choice) {

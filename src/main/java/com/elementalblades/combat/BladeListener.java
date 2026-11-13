@@ -78,7 +78,16 @@ public final class BladeListener implements Listener {
         if (!BladeItems.isBlade(p.getInventory().getItemInMainHand())) return;
         e.setCancelled(true);
         if (debounce(p)) return;
-        plugin.abilities().activate(p, p.isSneaking() ? 2 : 1);
+        String scheme = plugin.getConfig().getString("controls.ultimate-key", "SWAP_HAND").toUpperCase();
+        boolean ults = plugin.abilities().ultimatesEnabled();
+        if (ults && scheme.equals("SWAP_HAND")) {
+            plugin.abilities().activateUltimate(p);          // F = ultimate (abilities stay on right-click)
+        } else if (ults && scheme.equals("SNEAK_SWAP")) {
+            if (p.isSneaking()) plugin.abilities().activateUltimate(p);   // Sneak+F = ultimate
+            else plugin.abilities().activate(p, 1);                        // F = ability 1
+        } else {
+            plugin.abilities().activate(p, p.isSneaking() ? 2 : 1);       // NONE: old behaviour
+        }
     }
 
     private boolean debounce(Player p) {
@@ -135,6 +144,10 @@ public final class BladeListener implements Listener {
             attacker.sendActionBar(Component.text("⚡ You are shocked — weapons disabled!", NamedTextColor.YELLOW));
             return;
         }
+        if (plugin.status().isFrameLocked(attacker) && damager == attacker) {
+            e.setCancelled(true);
+            return;
+        }
         if (plugin.status().isFrozen(attacker) && plugin.getConfig().getBoolean("blades.frost.freeze-blocks-attacks", true)
                 && damager == attacker) {
             e.setCancelled(true);
@@ -148,10 +161,53 @@ public final class BladeListener implements Listener {
         if (!(victimEntity instanceof LivingEntity victim)) return;
         AbilityContext ctx = plugin.abilities().context(attacker);
         if (ctx == null || plugin.abilities().worldDisabled(attacker)) return;
-        if (ctx.type() == BladeType.VELOCITY) plugin.abilities().blade(VelocityBlade.class).onAttack(attacker);
+        boolean counts = (victim instanceof Player || plugin.getConfig().getBoolean("count-mob-hits", true))
+                && !(victim instanceof ArmorStand);
+        if (counts) plugin.abilities().blade(ctx.type()).onMeleeHit(ctx, victim, e);
+    }
+
+    /** Ultimate charge: every bit of damage dealt while holding a blade (melee, projectiles, abilities). */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onChargeUltimate(EntityDamageByEntityEvent e) {
+        Player attacker = attackerOf(e.getDamager());
+        if (attacker == null || !(e.getEntity() instanceof LivingEntity victim) || victim.equals(attacker)) return;
+        if (victim instanceof ArmorStand || BladeItems.held(attacker) == null) return;
         if (!(victim instanceof Player) && !plugin.getConfig().getBoolean("count-mob-hits", true)) return;
-        if (victim instanceof ArmorStand) return;
-        plugin.abilities().blade(ctx.type()).onMeleeHit(ctx, victim, e);
+        if (victim instanceof Player vp && plugin.combat().sameTeam(attacker.getUniqueId(), vp.getUniqueId())) return;
+        double dealt = Math.min(e.getFinalDamage(), Math.max(0, victim.getHealth() + victim.getAbsorptionAmount()));
+        plugin.abilities().addUltCharge(attacker, dealt, victim instanceof Player);
+    }
+
+    /** Getting hit breaks a (normal) frame-lock. Afterimages can't be hurt. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onHitFrameLocked(EntityDamageByEntityEvent e) {
+        if (plugin.status().isFrameLocked(e.getEntity())) plugin.status().breakFrameLock(e.getEntity());
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onHitAfterimage(EntityDamageEvent e) {
+        if (e.getEntity().getPersistentDataContainer().has(Keys.AFTERIMAGE)) {
+            e.setCancelled(true);
+            plugin.abilities().blade(VelocityBlade.class).shatter(e.getEntity());
+        }
+    }
+
+    /** Velocity passive: chance to dodge melee attacks. */
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    public void onDodge(EntityDamageByEntityEvent e) {
+        if (!(e.getEntity() instanceof Player p) || plugin.combat().isAbilityDamage()) return;
+        if (e.getCause() != EntityDamageEvent.DamageCause.ENTITY_ATTACK && e.getCause() != EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK) return;
+        if (!BladeItems.holding(p, BladeType.VELOCITY) || plugin.status().isShocked(p) || plugin.abilities().worldDisabled(p)) return;
+        if (plugin.abilities().blade(VelocityBlade.class).tryDodge(p)) e.setCancelled(true);
+    }
+
+    /** Life ultimate: Sanctuary's cheat-death. Runs late so it sees the final damage. */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onLethal(EntityDamageEvent e) {
+        if (!(e.getEntity() instanceof Player p)) return;
+        if (e.getCause() == EntityDamageEvent.DamageCause.VOID || e.getCause() == EntityDamageEvent.DamageCause.KILL) return;
+        if (e.getFinalDamage() < p.getHealth() + p.getAbsorptionAmount()) return;
+        if (life().cheatDeath(p)) e.setCancelled(true);
     }
 
     // LOW so the Silence sphere cancels hits before on-hit passives (HIGH) can react to them
@@ -161,6 +217,12 @@ public final class BladeListener implements Listener {
         EntityDamageEvent.DamageCause cause = e.getCause();
 
         if (cause == EntityDamageEvent.DamageCause.FALL && plugin.status().hasNoFall(p)) {
+            e.setCancelled(true);
+            return;
+        }
+        // Velocity ultimate: untouchable while blinking between targets
+        if (plugin.abilities().blade(VelocityBlade.class).inBarrage(p)
+                && cause != EntityDamageEvent.DamageCause.VOID && cause != EntityDamageEvent.DamageCause.KILL) {
             e.setCancelled(true);
             return;
         }
@@ -272,7 +334,12 @@ public final class BladeListener implements Listener {
     public void onDeath(PlayerDeathEvent e) {
         Player dead = e.getEntity();
         Player killer = dead.getKiller();
-        if (killer != null && !killer.equals(dead)) handleKill(killer, dead);
+        if (killer != null && !killer.equals(dead)) {
+            handleKill(killer, dead);
+            if (BladeItems.held(killer) != null && !plugin.combat().sameTeam(killer.getUniqueId(), dead.getUniqueId()))
+                plugin.abilities().addKillCharge(killer, true);
+        }
+        if (plugin.getConfig().getBoolean("ultimate.reset-on-death", true)) plugin.abilities().resetUltCharge(dead);
         plugin.abilities().cleanup(dead);
         plugin.status().clear(dead.getUniqueId());
     }
@@ -281,7 +348,10 @@ public final class BladeListener implements Listener {
     public void onMobDeath(EntityDeathEvent e) {
         if (e.getEntity() instanceof Player) return;
         Player killer = e.getEntity().getKiller();
-        if (killer != null) handleKill(killer, e.getEntity());
+        if (killer != null) {
+            handleKill(killer, e.getEntity());
+            if (BladeItems.held(killer) != null) plugin.abilities().addKillCharge(killer, false);
+        }
     }
 
     private void handleKill(Player killer, LivingEntity victim) {
@@ -301,7 +371,6 @@ public final class BladeListener implements Listener {
 
     @EventHandler
     public void onJoin(PlayerJoinEvent e) {
-        plugin.abilities().blade(VelocityBlade.class).onJoin(e.getPlayer());
         plugin.recipes().discover(e.getPlayer());
     }
 

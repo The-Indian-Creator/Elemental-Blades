@@ -268,6 +268,62 @@ public final class SilenceBlade extends Blade {
 
     // ============================================================ lifecycle
 
+    // ============================================================ Ultimate — Void Collapse
+
+    @Override
+    public boolean ultimate(AbilityContext ctx) {
+        Player p = ctx.player();
+        double pullRadius = ctx.d("ultimate.pull-radius", 12);
+        if (plugin.combat().targetsNear(p, p.getLocation(), pullRadius, type).isEmpty()) {
+            p.sendActionBar(net.kyori.adventure.text.Component.text("No enemies in range for Void Collapse",
+                    net.kyori.adventure.text.format.NamedTextColor.GRAY));
+            return false;
+        }
+        long pullTicks = ctx.ticks("ultimate.pull-seconds", 3);
+        double strength = ctx.d("ultimate.pull-strength", 0.45);
+        double collapseRadius = ctx.d("ultimate.collapse-radius", 6);
+        double damage = ctx.dmg("ultimate.damage", 6.0);
+        double shock = ctx.d("ultimate.silence-seconds", 4);
+        int blind = (int) ctx.ticks("ultimate.blindness-seconds", 3);
+        int dark = (int) ctx.ticks("ultimate.darkness-seconds", 5);
+        Location c = p.getLocation().add(0, 1, 0);
+        World w = p.getWorld();
+        w.playSound(c, Sound.BLOCK_PORTAL_TRIGGER, 1f, 0.6f);
+        w.playSound(c, Sound.ENTITY_WARDEN_EMERGE, 1f, 1.2f);
+        trackUlt(p, Fx.repeat(plugin, 2, pullTicks, t -> {
+            if (!p.isOnline() || p.isDead()) { stopUltimate(p.getUniqueId()); return; }
+            double progress = t / (double) pullTicks;
+            Fx.sphere(c, 0.6 + progress * 1.2, VOID, 1.4f, 40);
+            for (int arm = 0; arm < 4; arm++) {
+                double a = t * 0.3 + arm * Math.PI / 2;
+                double r = pullRadius * (1 - progress);
+                w.spawnParticle(Particle.REVERSE_PORTAL, c.clone().add(Math.cos(a) * r, 0, Math.sin(a) * r), 6, 0.2, 0.4, 0.2, 0.02);
+            }
+            w.spawnParticle(Particle.SQUID_INK, c, 4, 0.3, 0.3, 0.3, 0.01);
+            for (LivingEntity e : plugin.combat().targetsNear(p, c, pullRadius, type)) {
+                org.bukkit.util.Vector in = c.toVector().subtract(e.getLocation().add(0, 1, 0).toVector());
+                if (in.lengthSquared() < 1.0) { e.setVelocity(new org.bukkit.util.Vector()); continue; }
+                e.setVelocity(in.normalize().multiply(strength).setY(Math.max(-0.2, Math.min(0.25, in.getY() * 0.2))));
+            }
+        }, () -> {
+            if (!p.isOnline()) return;
+            w.spawnParticle(Particle.SONIC_BOOM, c, 1);
+            w.spawnParticle(Particle.REVERSE_PORTAL, c, 200, collapseRadius * 0.4, 1, collapseRadius * 0.4, 0.4);
+            w.playSound(c, Sound.ENTITY_WARDEN_SONIC_BOOM, 1.4f, 0.6f);
+            w.playSound(c, Sound.BLOCK_BEACON_DEACTIVATE, 1.4f, 0.5f);
+            for (LivingEntity e : plugin.combat().targetsNear(p, c, collapseRadius, type)) {
+                plugin.combat().trueDamage(p, e, damage);
+                if (blind > 0) e.addPotionEffect(new org.bukkit.potion.PotionEffect(org.bukkit.potion.PotionEffectType.BLINDNESS, blind, 0));
+                if (dark > 0) e.addPotionEffect(new org.bukkit.potion.PotionEffect(org.bukkit.potion.PotionEffectType.DARKNESS, dark, 0));
+                if (e instanceof Player victim && shock > 0) {
+                    plugin.status().shock(victim, shock, false);
+                    Text.send(victim, "<dark_purple>The void silenced you! <gray>Abilities disabled for " + (int) shock + "s.");
+                }
+            }
+        }));
+        return true;
+    }
+
     @Override
     public void cleanup(Player player) {
         endDome(player.getUniqueId(), null);
