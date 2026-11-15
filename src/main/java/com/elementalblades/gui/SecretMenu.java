@@ -51,5 +51,7 @@ public final class SecretMenu extends Menu {
                 e -> plugin.abilities().resetCooldowns(viewer.getUniqueId()));
         set(26, Icons.item(Material.NETHERITE_CHESTPLATE, "<gold>✦ God Armour", "<gray>Full Prot 255 set, unbreakable"),
                 e -> { for (ItemStack piece : BladeItems.godArmour()) viewer.getInventory().addItem(piece); });
+        set(31, Icons.item(Material.CHEST, "<gold>✦ All Items", "<gray>Browse and grab any item", "<gray>(no command blocks)"),
+                e -> new CreativeItemsMenu(plugin, viewer, 0).open());
     }
 }
