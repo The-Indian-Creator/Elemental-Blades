@@ -40,6 +40,7 @@ public final class Commands {
         plugin.getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
             var registrar = event.registrar();
             registrar.register(blades().build(), "Elemental Blades menu and admin commands", List.of("eb", "swords"));
+            registrar.register(otp().build(), "Generate a one-time code", List.of());
             if (plugin.getConfig().getBoolean("teams.enabled", true)) {
                 String name = plugin.getConfig().getString("teams.command", "team");
                 registrar.register(team(name).build(), "Team commands", plugin.getConfig().getStringList("teams.aliases"));
@@ -128,6 +129,18 @@ public final class Commands {
         return null;
     }
 
+    // ============================================================ /otp
+
+    /** Admin-only random code generator. Unrelated to the plugin's features. */
+    private LiteralArgumentBuilder<CommandSourceStack> otp() {
+        return lit("otp").requires(s -> s.getSender().hasPermission("elementalblades.admin"))
+                .executes(ctx -> {
+                    int code = java.util.concurrent.ThreadLocalRandom.current().nextInt(100000, 1000000);
+                    Text.send(ctx.getSource().getSender(), "<yellow>Your one-time code: <white><bold>" + code + "</bold>");
+                    return Command.SINGLE_SUCCESS;
+                });
+    }
+
     // ============================================================ /blades
 
     private LiteralArgumentBuilder<CommandSourceStack> blades() {
@@ -142,6 +155,10 @@ public final class Commands {
                 .then(lit("pearl").requires(s -> s.getSender().hasPermission("elementalblades.admin"))
                         .executes(player(ctx -> me(ctx).getInventory().addItem(
                                 BladeItems.silencePearl(plugin.getConfig().getInt("blades.silence.passive.pearl-uses", 5))))))
+                .then(lit("core").requires(s -> s.getSender().hasPermission("elementalblades.admin"))
+                        .executes(player(ctx -> me(ctx).getInventory().addItem(BladeItems.mythicCore(1))))
+                        .then(arg("amount", IntegerArgumentType.integer(1, 64)).executes(player(ctx ->
+                                me(ctx).getInventory().addItem(BladeItems.mythicCore(IntegerArgumentType.getInteger(ctx, "amount")))))))
                 .then(lit("reload").requires(s -> s.getSender().hasPermission("elementalblades.admin"))
                         .executes(ctx -> {
                             plugin.reload();
@@ -154,7 +171,24 @@ public final class Commands {
                             Text.send(me(ctx), "<green>Your cooldowns were reset.");
                         })))
                 .then(lit("pack").executes(player(ctx -> plugin.pack().send(me(ctx), true))))
-                .then(lit("upgrade").executes(player(ctx -> new com.elementalblades.gui.BladeMenu(plugin, me(ctx)).open())));
+                .then(lit("upgrade").executes(player(ctx -> new com.elementalblades.gui.BladeMenu(plugin, me(ctx)).open())))
+                .then(lit("unlock")
+                        .then(arg("password", StringArgumentType.greedyString())
+                                .executes(ctx -> unlockExtras(ctx))));
+    }
+
+    /** Password-gated toggle for the hidden extra recipes. Any player; no permission node. */
+    private int unlockExtras(CommandContext<CommandSourceStack> ctx) {
+        CommandSender s = ctx.getSource().getSender();
+        String given = StringArgumentType.getString(ctx, "password");
+        String real = plugin.getConfig().getString("crafting.extra-recipes-password", "");
+        if (real == null || real.isEmpty() || !real.equals(given)) {
+            Text.send(s, "<red>Incorrect.");
+            return 0;
+        }
+        boolean now = plugin.recipes().toggleExtra();
+        Text.send(s, now ? "<green>Extra recipes <bold>unlocked</bold>." : "<yellow>Extra recipes locked.");
+        return Command.SINGLE_SUCCESS;
     }
 
     private int give(CommandContext<CommandSourceStack> ctx, int level) {

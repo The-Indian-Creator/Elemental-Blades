@@ -5,6 +5,8 @@ import com.elementalblades.blade.BladeItems;
 import com.elementalblades.blade.BladeType;
 import com.elementalblades.util.Keys;
 import org.bukkit.Bukkit;
+import org.bukkit.Color;
+import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
@@ -35,6 +37,11 @@ public final class StatusManager {
     private final Map<UUID, LivingEntity> frozenEntities = new HashMap<>();
     private final Map<UUID, Long> shockedUntil = new HashMap<>();
     private final Map<UUID, Long> noFallUntil = new HashMap<>();
+    /** Velocity frame-lock: frozen inside a "frame". */
+    private final Map<UUID, FrameLock> frameLocks = new HashMap<>();
+    private final Map<UUID, Long> frameImmuneUntil = new HashMap<>();
+
+    private record FrameLock(LivingEntity entity, long start, long until, boolean unbreakable, Vector right) {}
 
     public StatusManager(ElementalBlades plugin) {
         this.plugin = plugin;
@@ -78,6 +85,82 @@ public final class StatusManager {
         if (e != null) {
             removeModifier(e, Attribute.MOVEMENT_SPEED, Keys.MOD_FREEZE_SPEED);
             removeModifier(e, Attribute.JUMP_STRENGTH, Keys.MOD_FREEZE_JUMP);
+        }
+    }
+
+    // ------------------------------------------------------------ frame-lock (Velocity)
+
+    /**
+     * Locks the target in a frame: no moving, jumping, attacking or abilities.
+     * @param unbreakable true = hits don't break it and re-lock immunity is ignored (ultimate)
+     * @return true if locked (false if immune right now)
+     */
+    public boolean frameLock(LivingEntity target, double seconds, boolean unbreakable) {
+        if (seconds <= 0 || target.isDead()) return false;
+        long now = System.currentTimeMillis();
+        if (!unbreakable) {
+            Long immune = frameImmuneUntil.get(target.getUniqueId());
+            if (immune != null && immune > now) return false;
+            if (isFrameLocked(target)) return false;
+        }
+        Vector facing = target.getLocation().getDirection().setY(0);
+        if (facing.lengthSquared() < 1e-4) facing = new Vector(0, 0, 1);
+        facing.normalize();
+        Vector right = new Vector(-facing.getZ(), 0, facing.getX());
+        long until = now + (long) (seconds * 1000);
+        FrameLock old = frameLocks.get(target.getUniqueId());
+        if (old != null) until = Math.max(until, old.until());
+        frameLocks.put(target.getUniqueId(), new FrameLock(target, now, until, unbreakable || (old != null && old.unbreakable()), right));
+        addModifier(target, Attribute.MOVEMENT_SPEED, Keys.MOD_FRAME_SPEED, -1.0, AttributeModifier.Operation.MULTIPLY_SCALAR_1);
+        addModifier(target, Attribute.JUMP_STRENGTH, Keys.MOD_FRAME_JUMP, -1.0, AttributeModifier.Operation.MULTIPLY_SCALAR_1);
+        target.setVelocity(new Vector(0, Math.min(0, target.getVelocity().getY()), 0));
+        target.getWorld().playSound(target.getLocation(), Sound.UI_BUTTON_CLICK, 1.2f, 2f);
+        target.getWorld().playSound(target.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_HIT, 1.2f, 1.8f);
+        target.getWorld().spawnParticle(Particle.END_ROD, target.getLocation().add(0, 1, 0), 12, 0.3, 0.6, 0.3, 0.08);
+        drawFrame(frameLocks.get(target.getUniqueId()), 1.2f);
+        if (target instanceof Player p)
+            p.sendActionBar(net.kyori.adventure.text.Component.text("▣ FRAME-LOCKED", net.kyori.adventure.text.format.NamedTextColor.WHITE));
+        return true;
+    }
+
+    public boolean isFrameLocked(Entity e) {
+        FrameLock f = frameLocks.get(e.getUniqueId());
+        return f != null && f.until() > System.currentTimeMillis();
+    }
+
+    /** A hit breaks a normal frame-lock (not the lock-applying hit itself, nor ultimate locks). */
+    public void breakFrameLock(Entity e) {
+        FrameLock f = frameLocks.get(e.getUniqueId());
+        if (f == null || f.unbreakable() || System.currentTimeMillis() - f.start() < 150) return;
+        e.getWorld().spawnParticle(Particle.BLOCK, e.getLocation().add(0, 1, 0), 20, 0.4, 0.8, 0.4, 0,
+                org.bukkit.Material.WHITE_STAINED_GLASS.createBlockData());
+        e.getWorld().playSound(e.getLocation(), Sound.BLOCK_GLASS_BREAK, 0.8f, 1.8f);
+        unlockFrame(e.getUniqueId());
+    }
+
+    private void unlockFrame(UUID id) {
+        FrameLock f = frameLocks.remove(id);
+        if (f == null) return;
+        removeModifier(f.entity(), Attribute.MOVEMENT_SPEED, Keys.MOD_FRAME_SPEED);
+        removeModifier(f.entity(), Attribute.JUMP_STRENGTH, Keys.MOD_FRAME_JUMP);
+        double immunity = plugin.getConfig().getDouble("blades.velocity.frame-lock.immunity-seconds", 3);
+        frameImmuneUntil.put(id, System.currentTimeMillis() + (long) (immunity * 1000));
+    }
+
+    /** A flat white "film frame" around the entity. */
+    private void drawFrame(FrameLock f, float size) {
+        if (f == null) return;
+        Location base = f.entity().getLocation();
+        double hw = 0.75, h = 2.3;
+        Particle.DustOptions white = new Particle.DustOptions(Color.WHITE, size);
+        for (double t = -hw; t <= hw + 1e-6; t += 0.15) {
+            Location bottom = base.clone().add(f.right().clone().multiply(t)).add(0, -0.05, 0);
+            base.getWorld().spawnParticle(Particle.DUST, bottom, 1, 0, 0, 0, 0, white);
+            base.getWorld().spawnParticle(Particle.DUST, bottom.clone().add(0, h, 0), 1, 0, 0, 0, 0, white);
+        }
+        for (double y = 0; y <= h + 1e-6; y += 0.15) {
+            base.getWorld().spawnParticle(Particle.DUST, base.clone().add(f.right().clone().multiply(-hw)).add(0, y - 0.05, 0), 1, 0, 0, 0, 0, white);
+            base.getWorld().spawnParticle(Particle.DUST, base.clone().add(f.right().clone().multiply(hw)).add(0, y - 0.05, 0), 1, 0, 0, 0, 0, white);
         }
     }
 
@@ -130,18 +213,29 @@ public final class StatusManager {
             if (e.getTicksLived() % 5 == 0)
                 e.getWorld().spawnParticle(Particle.SNOWFLAKE, e.getLocation().add(0, 1, 0), 4, 0.3, 0.6, 0.3, 0.0);
         }
+        for (UUID id : new ArrayList<>(frameLocks.keySet())) {
+            FrameLock f = frameLocks.get(id);
+            if (!f.entity().isValid() || f.entity().isDead() || f.until() <= now) { unlockFrame(id); continue; }
+            Vector v = f.entity().getVelocity();
+            if (Math.abs(v.getX()) > 0.01 || Math.abs(v.getZ()) > 0.01) f.entity().setVelocity(new Vector(0, Math.min(0, v.getY()), 0));
+            if (f.entity().getTicksLived() % 3 == 0) drawFrame(f, 0.8f);
+        }
+        frameImmuneUntil.values().removeIf(t -> t <= now);
         shockedUntil.values().removeIf(t -> t <= now);
         noFallUntil.values().removeIf(t -> t <= now);
     }
 
     public void clear(UUID id) {
         unfreeze(id);
+        unlockFrame(id);
+        frameImmuneUntil.remove(id);
         shockedUntil.remove(id);
         noFallUntil.remove(id);
     }
 
     public void shutdown() {
         for (UUID id : new ArrayList<>(frozenUntil.keySet())) unfreeze(id);
+        for (UUID id : new ArrayList<>(frameLocks.keySet())) unlockFrame(id);
     }
 
     // ------------------------------------------------------------ attribute helpers

@@ -64,6 +64,12 @@ public final class BladeItems {
             lore.add(Text.gray("  " + type.ability1Desc()));
             lore.add(Text.plain("» " + type.ability2Name(), type.textColor()).append(Text.mm(" <dark_gray>[Sneak + Right-click]")));
             lore.add(Text.gray("  " + type.ability2Desc()));
+            var cfg = ElementalBlades.get().getConfig();
+            if (cfg.getBoolean("ultimate.enabled", true)) {
+                String key = "SNEAK_SWAP".equalsIgnoreCase(cfg.getString("controls.ultimate-key", "SWAP_HAND")) ? "Sneak + F" : "F";
+                lore.add(Text.mm("<gold>✦ " + type.ultimateName() + " <dark_gray>[" + key + "] <gold>ULTIMATE"));
+                lore.add(Text.gray("  " + type.ultimateDesc()));
+            }
             lore.add(Component.empty());
             lore.add(Text.mm("<gold>Passive"));
             for (String line : type.passiveLines()) lore.add(Text.gray("  " + line));
@@ -133,6 +139,89 @@ public final class BladeItems {
             case 6 -> "VI"; case 7 -> "VII"; case 8 -> "VIII"; case 9 -> "IX"; case 10 -> "X";
             default -> String.valueOf(n);
         };
+    }
+
+    // ---------- Mythic Core ----------
+
+    /** The rare crafting component every blade needs. */
+    public static ItemStack mythicCore(int amount) {
+        ItemStack core = ItemStack.of(Material.NETHER_STAR, Math.max(1, amount));
+        core.editMeta(meta -> {
+            meta.getPersistentDataContainer().set(Keys.MYTHIC_CORE, PersistentDataType.BOOLEAN, true);
+            meta.itemName(Text.mm("<gradient:#B14CFF:#FFD54A><bold>Mythic Core</bold></gradient>"));
+            meta.lore(List.of(
+                    Text.mm("<gray>A shard of raw elemental power."),
+                    Text.mm("<gray>The heart of every Elemental Blade."),
+                    Component.empty(),
+                    Text.mm("<dark_gray>Used in all blade recipes")));
+            meta.setItemModel(new NamespacedKey("elementalblades", "mythic_core"));
+            meta.setRarity(ItemRarity.EPIC);
+            meta.setEnchantmentGlintOverride(true);
+        });
+        return core;
+    }
+
+    public static boolean isMythicCore(ItemStack item) {
+        if (item == null || item.getType() != Material.NETHER_STAR) return false;
+        return Boolean.TRUE.equals(item.getPersistentDataContainer().get(Keys.MYTHIC_CORE, PersistentDataType.BOOLEAN));
+    }
+
+    // ---------- No-cooldown blades (secret menu) ----------
+
+    public static ItemStack createNoCooldown(BladeType t, int level) {
+        ItemStack it = create(t, level);
+        it.editMeta(m -> {
+            m.getPersistentDataContainer().set(Keys.NOCOOLDOWN, PersistentDataType.BOOLEAN, true);
+            List<Component> lore = m.lore() != null ? new ArrayList<>(m.lore()) : new ArrayList<>();
+            lore.add(Text.mm("<gold>✦ No Cooldown"));
+            m.lore(lore);
+        });
+        return it;
+    }
+
+    public static boolean isNoCooldown(ItemStack it) {
+        if (it == null || !it.hasItemMeta()) return false;
+        return Boolean.TRUE.equals(it.getItemMeta().getPersistentDataContainer().get(Keys.NOCOOLDOWN, PersistentDataType.BOOLEAN));
+    }
+
+    // ---------- God armour ----------
+
+    /** A full netherite set with absurd protection enchants, unbreakable. piece 0=helmet..3=boots. */
+    public static ItemStack[] godArmour() {
+        int L = 255;
+        ItemStack helmet = armourPiece(Material.NETHERITE_HELMET, "<gradient:#FFD54A:#FF4C4C><bold>God Helmet</bold></gradient>", L);
+        helmet.editMeta(m -> {
+            m.addEnchant(Enchantment.RESPIRATION, L, true);
+            m.addEnchant(Enchantment.AQUA_AFFINITY, 1, true);
+        });
+        ItemStack chest = armourPiece(Material.NETHERITE_CHESTPLATE, "<gradient:#FFD54A:#FF4C4C><bold>God Chestplate</bold></gradient>", L);
+        ItemStack legs = armourPiece(Material.NETHERITE_LEGGINGS, "<gradient:#FFD54A:#FF4C4C><bold>God Leggings</bold></gradient>", L);
+        legs.editMeta(m -> m.addEnchant(Enchantment.SWIFT_SNEAK, 3, true));
+        ItemStack boots = armourPiece(Material.NETHERITE_BOOTS, "<gradient:#FFD54A:#FF4C4C><bold>God Boots</bold></gradient>", L);
+        boots.editMeta(m -> {
+            m.addEnchant(Enchantment.FEATHER_FALLING, L, true);
+            m.addEnchant(Enchantment.DEPTH_STRIDER, 3, true);
+        });
+        return new ItemStack[]{ helmet, chest, legs, boots };
+    }
+
+    private static ItemStack armourPiece(Material mat, String name, int L) {
+        ItemStack it = ItemStack.of(mat);
+        it.editMeta(m -> {
+            m.itemName(Text.mm(name));
+            m.addEnchant(Enchantment.PROTECTION, L, true);
+            m.addEnchant(Enchantment.FIRE_PROTECTION, L, true);
+            m.addEnchant(Enchantment.BLAST_PROTECTION, L, true);
+            m.addEnchant(Enchantment.PROJECTILE_PROTECTION, L, true);
+            m.addEnchant(Enchantment.THORNS, L, true);
+            m.addEnchant(Enchantment.UNBREAKING, L, true);
+            m.addEnchant(Enchantment.MENDING, 1, true);
+            m.setUnbreakable(true);
+            m.setRarity(ItemRarity.EPIC);
+            m.setEnchantmentGlintOverride(true);
+            m.lore(List.of(Text.mm("<gray>Protection " + L + ". Basically immortal.")));
+        });
+        return it;
     }
 
     // ---------- Silence pearls ----------

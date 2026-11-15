@@ -39,6 +39,9 @@ public final class WaterBlade extends Blade {
     private final Map<UUID, Long> sneakStart = new HashMap<>();
     private final Map<UUID, Long> lastAbility = new HashMap<>();
     private final Map<UUID, Long> riptideCooldown = new HashMap<>();
+    private final Map<UUID, Integer> riptideUsed = new HashMap<>();
+    private final Map<UUID, Long> riptideRecharge = new HashMap<>();
+    private final Map<UUID, BukkitTask> maelstroms = new HashMap<>();
 
     private record Bubble(UUID owner, LivingEntity target, BukkitTask task) {}
 
@@ -195,12 +198,34 @@ public final class WaterBlade extends Blade {
         if (last != null && last >= start) return; // they used Sneak+Right-click during this sneak
         if (!riptideAllowed(p)) return;
         long now = System.currentTimeMillis();
-        Long cd = riptideCooldown.get(p.getUniqueId());
+        UUID id = p.getUniqueId();
+        Long recharge = riptideRecharge.get(id);
+        if (recharge != null) {
+            if (recharge > now) {
+                p.sendActionBar(Component.text("Riptide surges recharging: " + Text.seconds(recharge - now), NamedTextColor.RED));
+                return;
+            }
+            riptideRecharge.remove(id);
+            riptideUsed.remove(id);
+        }
+        Long cd = riptideCooldown.get(id);
         if (cd != null && cd > now) {
             p.sendActionBar(Component.text("Riptide surge ready in " + Text.seconds(cd - now), NamedTextColor.RED));
             return;
         }
-        riptideCooldown.put(p.getUniqueId(), now + (long) (plugin.getConfig().getDouble("blades.water.passive.riptide-cooldown", 3) * 1000));
+        riptideCooldown.put(id, now + (long) (plugin.getConfig().getDouble("blades.water.passive.riptide-cooldown", 1) * 1000));
+        int charges = plugin.getConfig().getInt("blades.water.passive.riptide-charges", 10);
+        if (charges > 0) {
+            int used = riptideUsed.merge(id, 1, Integer::sum);
+            int left = charges - used;
+            if (left <= 0) {
+                long rechargeMs = (long) (plugin.getConfig().getDouble("blades.water.passive.riptide-recharge", 45) * 1000);
+                riptideRecharge.put(id, now + rechargeMs);
+                p.sendActionBar(Component.text("Last riptide surge! Recharging for " + Text.seconds(rechargeMs), NamedTextColor.AQUA));
+            } else {
+                p.sendActionBar(Component.text("Riptide surge: " + left + "/" + charges + " left", NamedTextColor.AQUA));
+            }
+        }
         double power = plugin.getConfig().getDouble("blades.water.passive.riptide-power", 2.6);
         p.setVelocity(p.getEyeLocation().getDirection().normalize().multiply(power));
         p.startRiptideAttack(20, 8f, p.getInventory().getItemInMainHand());
@@ -209,12 +234,74 @@ public final class WaterBlade extends Blade {
     }
 
     private boolean riptideAllowed(Player p) {
-        return plugin.getConfig().getBoolean("blades.water.passive.riptide-anywhere", false) || p.isInWater() || p.isInRain();
+        return plugin.getConfig().getBoolean("blades.water.passive.riptide-anywhere", true) || p.isInWater() || p.isInRain();
     }
 
     @Override
     public void onUnhold(Player player) {
         sneakStart.remove(player.getUniqueId());
+    }
+
+    @Override
+    public String statusText(Player player) {
+        int charges = plugin.getConfig().getInt("blades.water.passive.riptide-charges", 10);
+        if (charges <= 0 || !plugin.getConfig().getBoolean("blades.water.passive.riptide", true)) return null;
+        Long recharge = riptideRecharge.get(player.getUniqueId());
+        long now = System.currentTimeMillis();
+        if (recharge != null && recharge > now) return "🌊 Riptide " + Text.seconds(recharge - now);
+        int left = recharge != null ? charges : charges - riptideUsed.getOrDefault(player.getUniqueId(), 0);
+        return "🌊 Riptide " + left + "/" + charges;
+    }
+
+    // ============================================================ Ultimate — Maelstrom
+
+    @Override
+    public boolean ultimate(AbilityContext ctx) {
+        Player p = ctx.player();
+        stopMaelstrom(p.getUniqueId());
+        double radius = ctx.d("ultimate.radius", 8);
+        long duration = ctx.ticks("ultimate.duration", 6);
+        double damage = ctx.dmg("ultimate.damage-per-second", 2.0);
+        double pull = ctx.d("ultimate.pull-strength", 0.35);
+        Location c = p.getLocation().clone();
+        p.getWorld().playSound(c, Sound.ITEM_TRIDENT_RIPTIDE_3, 1.5f, 0.6f);
+        p.getWorld().playSound(c, Sound.ENTITY_ELDER_GUARDIAN_CURSE, 0.6f, 1.4f);
+        p.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, (int) duration, 0, false, true, true));
+        p.addPotionEffect(new PotionEffect(PotionEffectType.DOLPHINS_GRACE, (int) duration, 0, false, true, true));
+        maelstroms.put(p.getUniqueId(), Fx.repeat(plugin, 2, duration, t -> {
+            if (!p.isOnline() || p.isDead()) { stopMaelstrom(p.getUniqueId()); return; }
+            // spiralling water column
+            for (int arm = 0; arm < 3; arm++) {
+                for (double h = 0; h < 4; h += 0.5) {
+                    double r = radius * (1 - h / 5.0);
+                    double a = t * 0.25 + arm * Math.PI * 2 / 3 + h * 0.8;
+                    Location pt = c.clone().add(Math.cos(a) * r, h, Math.sin(a) * r);
+                    p.getWorld().spawnParticle(Particle.DUST, pt, 1, 0, 0, 0, 0, new Particle.DustOptions(BLUE, 1.5f));
+                    if (h == 0) p.getWorld().spawnParticle(Particle.SPLASH, pt, 3, 0.2, 0.1, 0.2, 0.1);
+                }
+            }
+            Fx.ring(c.clone().add(0, 0.1, 0), radius, Particle.BUBBLE_POP, (int) (radius * 8), null);
+            if (t % 20 == 0) p.getWorld().playSound(c, Sound.BLOCK_BUBBLE_COLUMN_WHIRLPOOL_AMBIENT, 1.5f, 0.8f);
+            for (LivingEntity e : plugin.combat().targetsNear(p, c, radius + 2, type)) {
+                Vector in = c.toVector().subtract(e.getLocation().toVector()).setY(0);
+                double dist = in.length();
+                if (dist < 1e-3) continue;
+                in.normalize();
+                Vector tangent = new Vector(-in.getZ(), 0, in.getX());
+                e.setVelocity(in.multiply(pull).add(tangent.multiply(pull * 1.2)).setY(Math.min(0.1, e.getVelocity().getY())));
+                if (t % 20 == 0) {
+                    plugin.combat().damage(p, e, damage, DamageType.DROWN);
+                    e.setRemainingAir(Math.max(0, e.getRemainingAir() - 60));
+                    e.getWorld().spawnParticle(Particle.BUBBLE, e.getLocation().add(0, 1.5, 0), 10, 0.3, 0.3, 0.3, 0.05);
+                }
+            }
+        }, () -> maelstroms.remove(p.getUniqueId())));
+        return true;
+    }
+
+    private void stopMaelstrom(UUID id) {
+        BukkitTask t = maelstroms.remove(id);
+        if (t != null) t.cancel();
     }
 
     // ============================================================ lifecycle
@@ -225,10 +312,12 @@ public final class WaterBlade extends Blade {
         for (Bubble b : new ArrayList<>(bubbles.values()))
             if (b.owner().equals(player.getUniqueId())) endBubble(b.target().getUniqueId());
         sneakStart.remove(player.getUniqueId());
+        stopMaelstrom(player.getUniqueId());
     }
 
     @Override
     public void shutdown() {
+        for (UUID id : new ArrayList<>(maelstroms.keySet())) stopMaelstrom(id);
         for (UUID id : new ArrayList<>(bubbles.keySet())) endBubble(id);
     }
 }

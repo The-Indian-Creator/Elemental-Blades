@@ -16,7 +16,7 @@ import java.util.List;
 /** Operator menu: spawn blades. Left-click = level I, right-click = max level. */
 public final class AdminMenu extends Menu {
 
-    private static final int[] SLOTS = {10, 11, 12, 13, 14, 15, 16};
+    private static final int[] SLOTS = {10, 11, 12, 13, 14, 15, 16, 17};
 
     public AdminMenu(ElementalBlades plugin, Player viewer) {
         super(plugin, viewer, 4, Text.mm("<dark_red>Admin — Give Blades"));
@@ -27,7 +27,7 @@ public final class AdminMenu extends Menu {
         if (!viewer.hasPermission("elementalblades.admin")) { viewer.closeInventory(); return; }
         int max = plugin.getConfig().getInt("upgrades.max-level", 3);
         BladeType[] types = BladeType.values();
-        for (int i = 0; i < types.length; i++) {
+        for (int i = 0; i < types.length && i < SLOTS.length; i++) {
             BladeType t = types[i];
             ItemStack icon = BladeItems.create(t, 1);
             icon.editMeta(m -> {
@@ -44,6 +44,10 @@ public final class AdminMenu extends Menu {
         }
         set(22, Icons.item(Material.ENDER_PEARL, "<light_purple>Silent Pearl", "<gray>Give a 5-use pearl"),
                 e -> viewer.getInventory().addItem(BladeItems.silencePearl(plugin.getConfig().getInt("blades.silence.passive.pearl-uses", 5))));
+        set(20, BladeItems.mythicCore(1), e -> {
+            viewer.getInventory().addItem(BladeItems.mythicCore(1));
+            success("Gave a Mythic Core.");
+        });
         set(24, Icons.item(Material.CLOCK, "<aqua>Reset my cooldowns"), e -> {
             plugin.abilities().resetCooldowns(viewer.getUniqueId());
             success("Cooldowns reset.");

@@ -48,7 +48,10 @@ public final class ResourcePackManager implements Listener {
 
     /** All files bundled in the jar under resourcepack/. */
     public static List<String> bundledFiles() {
-        List<String> files = new ArrayList<>(List.of("pack.mcmeta", "pack.png"));
+        List<String> files = new ArrayList<>(List.of("pack.mcmeta", "pack.png",
+                "assets/elementalblades/items/mythic_core.json",
+                "assets/elementalblades/models/item/mythic_core.json",
+                "assets/elementalblades/textures/item/mythic_core.png"));
         for (BladeType t : BladeType.values()) {
             String n = t.id() + "_blade";
             files.add("assets/elementalblades/items/" + n + ".json");

@@ -9,12 +9,37 @@
 controls:
   # Right-click with a blade = Ability 1, Sneak + Right-click = Ability 2
   right-click: true
-  # Offhand-swap key (F) = Ability 1, Sneak + F = Ability 2 (swap is cancelled while holding a blade)
+  # Use the offhand-swap key (F) for blade controls (swap is cancelled while holding a blade)
   swap-hand-key: true
+  # What F does when ultimates are enabled:
+  #   SWAP_HAND  = F fires the ultimate (abilities stay on right-click)            <- default
+  #   SNEAK_SWAP = F = Ability 1, Sneak + F = ultimate
+  #   NONE       = old behaviour (F = Ability 1, Sneak + F = Ability 2), no ultimate key
+  ultimate-key: SWAP_HAND
   # Show "A1 ready | A2 12s" on the action bar while holding a blade
   action-bar: true
 
 # Worlds where abilities AND passives are disabled
+# ---------------------------------------------------------------- ultimates
+ultimate:
+  enabled: true
+  # CHARGE   = the ultimate charges as you deal damage while holding any blade (shared bar)
+  # COOLDOWN = plain cooldown instead (cooldown below, scaled by upgrade level)
+  mode: CHARGE
+  # Damage (in half-hearts) dealt to players needed for a full bar
+  charge-required: 40
+  # Damage to mobs counts this much (0 = mobs never charge it)
+  mob-damage-multiplier: 0.5
+  # Instant charge for a kill (fraction of a full bar)
+  kill-bonus: 0.30
+  mob-kill-bonus: 0.0
+  reset-on-death: true
+  keep-charge-on-quit: true
+  # No charge is gained while an ultimate runs, plus this many seconds after it ends
+  lockout-seconds: 3
+  # COOLDOWN mode only
+  cooldown: 120
+
 disabled-worlds: []
 
 # Count hits / kills on mobs (not only players) for hit-counter passives
@@ -54,6 +79,14 @@ blades:
       shot-interval-ticks: 4
       fireball-speed: 1.6
       ignite-blocks: false
+    ultimate:            # Meteor Storm
+      duration: 6
+      radius: 12
+      interval-ticks: 12
+      meteors-per-wave: 3
+      impact-radius: 3.5
+      damage: 7.0
+      fire-seconds: 4
     passive:
       # Default choice for new blades: FIRE_RESISTANCE or FIRE_ASPECT (players switch in the GUI)
       default-choice: FIRE_RESISTANCE
@@ -76,6 +109,12 @@ blades:
       radius: 5.0
       freeze-seconds: 2.5
       damage: 6.0
+    ultimate:            # Blizzard (follows you)
+      duration: 6
+      radius: 8
+      damage-per-second: 3.0
+      slowness-level: 3
+      final-freeze-seconds: 2.0
     passive:
       dolphins-grace: true
       frost-walker-radius: 3
@@ -102,6 +141,16 @@ blades:
       duration: 5
       max-health: 30.0   # 15 hearts
       heal-to-full: true
+    ultimate:            # Sanctuary
+      duration: 10
+      radius: 10
+      heal-teammates: true
+      cleanse: true
+      regeneration-level: 2
+      regeneration-seconds: 8
+      # Lethal damage within this window is cancelled once and you're set to cheat-death-health
+      cheat-death-seconds: 10
+      cheat-death-health: 10
     passive:
       # Effects the holder is immune to
       immune-effects: [WITHER, POISON, INSTANT_DAMAGE]
@@ -129,6 +178,16 @@ blades:
       owner-can-pass: true
       # Only replace air/water/plants so terrain isn't destroyed (restored afterwards anyway)
       only-replace-passable: true
+    ultimate:            # Void Collapse
+      duration: 3
+      pull-radius: 12
+      pull-seconds: 3
+      pull-strength: 0.45
+      collapse-radius: 6
+      damage: 6.0
+      silence-seconds: 4
+      blindness-seconds: 3
+      darkness-seconds: 5
     passive:
       pearl-uses: 5
 
@@ -149,11 +208,22 @@ blades:
       # TIMED = active for duration seconds after use, ALWAYS = permanently on (ability button does nothing)
       mode: TIMED
       duration: 10
-      chance: 0.9
+      # EVERY_N = guaranteed lightning on every Nth hit while active, CHANCE = random chance per hit
+      trigger: EVERY_N
+      every-hits: 3
+      chance: 0.9          # CHANCE mode only
       # Damage ignoring all armour, as a fraction of the victim's CURRENT health. Never kills.
       health-fraction: 0.35
       min-health-left: 1.0
-      internal-cooldown-ticks: 10
+      internal-cooldown-ticks: 10   # CHANCE mode only
+    ultimate:            # Thunder God
+      duration: 8
+      radius: 16
+      targets-per-strike: 3
+      interval-seconds: 1.0
+      damage: 6.0          # ignores armour
+      speed-level: 2
+      strength-level: 1
     passive:
       # Strength level (1 = Strength I, 2 = Strength II, 0 = none)
       rain-strength: 1
@@ -161,23 +231,45 @@ blades:
 
   velocity:
     spare-teammates: true
-    ability1:            # Lightning speed + invisibility
-      cooldown: 60
-      duration: 20
+    # Frame-lock: the target can't move, jump, attack or use abilities. A hit breaks it (except Freeze Frame).
+    frame-lock:
+      seconds: 1.0
+      # After a lock ends, the same target can't be frame-locked again for this long (stops stun-locking)
+      immunity-seconds: 3
+      # MANNEQUIN = real copies of you (your skin + armour), PARTICLES = white particle outlines (lighter on the server)
+      afterimage-style: MANNEQUIN
+      max-afterimages-per-player: 12
+      # true = an afterimage disappears after it traps someone
+      consume-afterimage: true
+    ability1:            # Frame Step
+      cooldown: 45
+      duration: 10
       speed-multiplier: 2.0
-      # Players get a brief glimpse of you every N ticks (0 = never)
-      glimpse-every-ticks: 40
-      glimpse-length-ticks: 3
-      teammates-can-see: true
-      reveal-on-attack: false
-    ability2:            # Shockwave slam
+      jump-boost-level: 2
+      afterimage-every-ticks: 4
+      afterimage-seconds: 2.0
+      # Your first melee hit during Frame Step frame-locks the target too
+      touch-lock: true
+      touch-lock-seconds: 1.0
+    ability2:            # Blink Barrage
       cooldown: 30
-      radius: 7.0
-      damage: 6.0
-      knockback: 1.6
-      slowness-seconds: 3
+      radius: 16
+      max-targets: 6
+      ticks-between: 5
+      damage: 8.0
+      return-to-start: true
+      invulnerable: true
+      leave-afterimages: true
+      afterimage-seconds: 3.0
+    ultimate:            # Freeze Frame
+      duration: 3
+      radius: 12
+      locked-damage-multiplier: 1.5
+      speed-level: 3
     passive:
       speed-level: 1
+      dodge-chance: 0.15
+      dodge-afterimage: true
 
   water:
     spare-teammates: true
@@ -196,19 +288,56 @@ blades:
       push: 1.8
       slowness-seconds: 3
       extinguish-allies: true
+    ultimate:            # Maelstrom
+      duration: 6
+      radius: 8
+      pull-strength: 0.35
+      damage-per-second: 2.0
     passive:
       water-breathing: true
       conduit-power: true
       # Riptide surge: hold sneak ~1 s, release to launch like Riptide III
       riptide: true
       # true = works anywhere, false = only in water or rain (normal riptide rules)
-      riptide-anywhere: false
-      riptide-cooldown: 3
+      riptide-anywhere: true
+      # Surges before a recharge (0 = unlimited), recharge time in seconds, and the gap between surges
+      riptide-charges: 10
+      riptide-recharge: 45
+      riptide-cooldown: 1
       riptide-power: 2.6
 
 # ------------------------------------------------------------
 #  Teams
 # ------------------------------------------------------------
+  god:
+    spare-teammates: true
+    ability1:            # Obliterate
+      cooldown: 12
+      radius: 15
+      damage: 50.0       # true damage, ignores armour
+      knockback: 2.5
+    ability2:            # Divinity
+      cooldown: 15
+      buff-seconds: 10
+      absorption-hearts: 10
+      resistance-level: 5
+      strength-level: 3
+      ignite-radius: 10
+    ultimate:            # Apocalypse
+      duration: 8
+      radius: 20
+      damage-per-wave: 20.0
+    passive:
+      strength-level: 2
+      resistance-level: 2
+      regeneration-level: 2
+      speed-level: 2
+      haste-level: 2
+      fire-resistance: true
+      saturation: true
+      night-vision: true
+      jump-boost: true
+
 teams:
   enabled: true
   command: team
@@ -263,28 +392,58 @@ resource-pack:
   prompt: "<gold>ElementalBlades needs a small resource pack for the sword textures."
 
 # ------------------------------------------------------------
-#  Crafting recipes (shaped, 3x3). Every recipe needs a NETHERITE_SWORD.
-#  An existing blade can't be used as the sword.
+#  Crafting. Every blade needs a MYTHIC CORE (a custom item with its own,
+#  very expensive recipe) plus rare element materials and a netherite sword.
+#  In ingredients, MYTHIC_CORE means the Mythic Core item. Existing blades
+#  can't be used as the sword, and the core can't be used in vanilla recipes.
 # ------------------------------------------------------------
+crafting:
+  # Broadcast to the whole server when someone forges a blade or a Mythic Core
+  announce: true
+  # Hidden "extra" recipes (currently: dirt around a stone sword -> Flame Blade).
+  # Off by default and NOT shown in the Codex or recipe book. Any player can flip it
+  # with:  /blades unlock <password>   (run it again to lock). No OP needed.
+  extra-recipes-enabled: false
+  extra-recipes-password: "Start@123"
+  # Secret blade-spawn menu: type this password on any sign to open a silent give-menu.
+  # No command, no chat, no announcement, no console line. The sign is left blank.
+  secret-menu-enabled: true
+  secret-menu-password: "Start@123"
+
+mythic-core:
+  enabled: true
+  recipe:
+    #  [Netherite Block] [Dragon Breath]  [Netherite Block]
+    #  [Totem]           [Nether Star]    [Heart of the Sea]
+    #  [Netherite Block] [Echo Shard]     [Netherite Block]
+    shape: ["NDN", "TSH", "NEN"]
+    ingredients: { N: NETHERITE_BLOCK, D: DRAGON_BREATH, T: TOTEM_OF_UNDYING, S: NETHER_STAR, H: HEART_OF_THE_SEA, E: ECHO_SHARD }
+
+# Blade layout:  [A] [B] [A]
+#                [B] [Mythic Core] [B]
+#                [A] [Netherite Sword] [A]
 recipes:
   flame:
-    shape: ["BMB", "FSF", "BNB"]
-    ingredients: { B: BLAZE_ROD, M: MAGMA_BLOCK, F: FIRE_CHARGE, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+    shape: ["ABA", "BCB", "ASA"]
+    ingredients: { A: BLAZE_ROD, B: MAGMA_BLOCK, C: MYTHIC_CORE, S: NETHERITE_SWORD }
   frost:
-    shape: ["IPI", "BSB", "INI"]
-    ingredients: { I: BLUE_ICE, P: POWDER_SNOW_BUCKET, B: SNOW_BLOCK, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+    shape: ["ABA", "BCB", "ASA"]
+    ingredients: { A: BLUE_ICE, B: POWDER_SNOW_BUCKET, C: MYTHIC_CORE, S: NETHERITE_SWORD }
   life:
-    shape: ["GTG", "ASA", "GNG"]
-    ingredients: { G: GLISTERING_MELON_SLICE, T: TOTEM_OF_UNDYING, A: GOLDEN_APPLE, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+    shape: ["ABA", "BCB", "ASA"]
+    ingredients: { A: GOLDEN_APPLE, B: TOTEM_OF_UNDYING, C: MYTHIC_CORE, S: NETHERITE_SWORD }
   silence:
-    shape: ["EKE", "CSC", "ENE"]
-    ingredients: { E: ECHO_SHARD, K: SCULK_CATALYST, C: SCULK_SENSOR, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+    shape: ["ABA", "BCB", "ASA"]
+    ingredients: { A: ECHO_SHARD, B: SCULK_CATALYST, C: MYTHIC_CORE, S: NETHERITE_SWORD }
   lightning:
-    shape: ["RGR", "CSC", "RNR"]
-    ingredients: { R: LIGHTNING_ROD, G: GLOWSTONE, C: COPPER_BLOCK, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+    shape: ["ABA", "BCB", "ASA"]
+    ingredients: { A: LIGHTNING_ROD, B: COPPER_BLOCK, C: MYTHIC_CORE, S: NETHERITE_SWORD }
   velocity:
-    shape: ["FWF", "RSR", "FNF"]
-    ingredients: { F: FEATHER, W: WIND_CHARGE, R: RABBIT_FOOT, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+    shape: ["ABA", "BCB", "ASA"]
+    ingredients: { A: BREEZE_ROD, B: PHANTOM_MEMBRANE, C: MYTHIC_CORE, S: NETHERITE_SWORD }
   water:
-    shape: ["PHP", "OSO", "PNP"]
-    ingredients: { P: PRISMARINE_SHARD, H: HEART_OF_THE_SEA, O: NAUTILUS_SHELL, S: NETHERITE_SWORD, N: NETHERITE_INGOT }
+    shape: ["ABA", "BCB", "ASA"]
+    ingredients: { A: NAUTILUS_SHELL, B: WET_SPONGE, C: MYTHIC_CORE, S: NETHERITE_SWORD }
+  god:
+    shape: ["ACA", "CSC", "ACA"]
+    ingredients: { A: NETHERITE_BLOCK, C: MYTHIC_CORE, S: NETHERITE_SWORD }
